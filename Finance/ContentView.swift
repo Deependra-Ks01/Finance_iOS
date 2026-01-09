@@ -1,0 +1,218 @@
+import SwiftUI
+import SwiftData
+
+struct ContentView: View {
+    @State private var showAddSheet = false
+
+    var body: some View {
+        TabView {
+            NavigationStack {
+                HomeView(showAddSheet: $showAddSheet)
+            }
+            .tabItem { Label("Home", systemImage: "house") }
+
+            NavigationStack {
+                TransactionsListView()
+            }
+            .tabItem { Label("Transactions", systemImage: "list.bullet") }
+
+            NavigationStack {
+                BudgetsView()
+            }
+            .tabItem { Label("Budgets", systemImage: "chart.pie") }
+
+            NavigationStack {
+                CategoriesView()
+            }
+            .tabItem { Label("Categories", systemImage: "folder") }
+
+            NavigationStack {
+                AnalyticsView()
+            }
+            .tabItem { Label("Analytics", systemImage: "chart.bar") }
+        }
+        .sheet(isPresented: $showAddSheet) {
+            AddTransactionView()
+        }
+    }
+}
+
+struct HomeView: View {
+    @Environment(\.modelContext) private var context
+    @Binding var showAddSheet: Bool
+    @State private var seeded = false
+    @Query private var categories: [Category]
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Text("Welcome to Finance")
+                .font(.title2)
+            Button {
+                showAddSheet = true
+            } label: {
+                Label("Add Transaction", systemImage: "plus.circle.fill")
+            }
+        }
+        .padding()
+        .navigationTitle("Home")
+        .onAppear(perform: seedDefaultsIfNeeded)
+    }
+
+    private func seedDefaultsIfNeeded() {
+        guard !seeded else { return }
+        if categories.isEmpty {
+            let defaults: [(String, String)] = [
+                ("Food", "#FF9500"), ("Rent", "#FF3B30"), ("Transport", "#34C759"), ("Salary", "#0A84FF")
+            ]
+            for (name, hex) in defaults {
+                context.insert(Category(name: name, colorHex: hex))
+            }
+            try? context.save()
+        }
+        seeded = true
+    }
+}
+
+struct TransactionsListView: View {
+    @Query(sort: \Transaction.date, order: .reverse) private var transactions: [Transaction]
+
+    var body: some View {
+        List {
+            ForEach(transactions) { tx in
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text(tx.category?.name ?? "Uncategorized").font(.headline)
+                        if !tx.note.isEmpty { Text(tx.note).font(.subheadline).foregroundStyle(.secondary) }
+                        Text(tx.date, style: .date).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Text(amountString(tx))
+                        .foregroundStyle(tx.type == .expense ? .red : .green)
+                }
+                .contextMenu {
+                    ShareLink(item: shareText(for: tx)) {
+                        Label("Share", systemImage: "square.and.arrow.up")
+                    }
+                }
+            }
+        }
+        .navigationTitle("Transactions")
+    }
+
+    private func amountString(_ tx: Transaction) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.currencyCode = Locale.current.currency?.identifier
+        return formatter.string(from: tx.amount as NSDecimalNumber) ?? "\(tx.amount)"
+    }
+
+    private func shareText(for tx: Transaction) -> String {
+        let type = tx.type == .expense ? "Expense" : "Income"
+        return "\(type): \(amountString(tx)) on \(DateFormatter.localizedString(from: tx.date, dateStyle: .medium, timeStyle: .none))\nCategory: \(tx.category?.name ?? "Uncategorized")\nNote: \(tx.note)"
+    }
+}
+
+struct BudgetsView: View {
+    @Query private var budgets: [Budget]
+    var body: some View {
+        List(budgets) { budget in
+            VStack(alignment: .leading) {
+                Text(budget.name).font(.headline)
+                Text("Amount: \(budget.amount as NSDecimalNumber)")
+            }
+        }
+        .navigationTitle("Budgets")
+    }
+}
+
+struct CategoriesView: View {
+    @Environment(\.modelContext) private var context
+    @Query private var categories: [Category]
+
+    var body: some View {
+        List {
+            ForEach(categories) { cat in
+                HStack {
+                    Circle().fill(cat.color).frame(width: 12, height: 12)
+                    Text(cat.name)
+                }
+            }
+        }
+        .navigationTitle("Categories")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    context.insert(Category(name: "New Category", colorHex: "#999999"))
+                } label: { Label("Add", systemImage: "plus") }
+            }
+        }
+    }
+}
+
+struct AnalyticsView: View {
+    var body: some View {
+        Text("Analytics coming soon")
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .navigationTitle("Analytics")
+    }
+}
+
+struct AddTransactionView: View {
+    @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var amount: String = ""
+    @State private var date: Date = .now
+    @State private var note: String = ""
+    @State private var type: TransactionType = .expense
+    @Query private var categories: [Category]
+    @State private var selectedCategory: Category?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                TextField("Amount", text: $amount)
+                    .keyboardType(.decimalPad)
+
+                Picker("Type", selection: $type) {
+                    ForEach(TransactionType.allCases, id: \.self) { t in
+                        Text(t.rawValue.capitalized).tag(t)
+                    }
+                }
+
+                DatePicker("Date", selection: $date, displayedComponents: .date)
+
+                Picker("Category", selection: $selectedCategory) {
+                    Text("None").tag(Category?.none)
+                    ForEach(categories) { cat in
+                        Text(cat.name).tag(Category?.some(cat))
+                    }
+                }
+
+                TextField("Note", text: $note)
+            }
+            .navigationTitle("Add Transaction")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save", action: save)
+                        .disabled(Decimal(string: amount) == nil)
+                }
+            }
+        }
+    }
+
+    private func save() {
+        guard let value = Decimal(string: amount) else { return }
+        let tx = Transaction(amount: value, date: date, note: note, type: type, category: selectedCategory)
+        context.insert(tx)
+        dismiss()
+    }
+}
+
+#Preview {
+    ContentView()
+        .modelContainer(for: [Transaction.self, Category.self, Tag.self, Budget.self])
+}
