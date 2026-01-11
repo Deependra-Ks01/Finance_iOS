@@ -1,4 +1,4 @@
-# Finance Tracker
+# Finance Manager
 
 A modern, native iOS application for tracking personal expenses, income, and budgets. Built entirely with **SwiftUI** and utilizing Apple's latest persistence framework, **SwiftData**.
 
