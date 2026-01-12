@@ -130,6 +130,10 @@ struct CategoriesView: View {
     @Environment(\.modelContext) private var context
     @Query private var categories: [Category]
 
+    @State private var showAddSheet = false
+    @State private var newCategoryName: String = ""
+    @State private var newCategoryColorHex: String = "#999999"
+
     var body: some View {
         List {
             ForEach(categories) { cat in
@@ -138,15 +142,57 @@ struct CategoriesView: View {
                     Text(cat.name)
                 }
             }
+            .onDelete(perform: deleteCategories)
         }
         .navigationTitle("Categories")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
-                    context.insert(Category(name: "New Category", colorHex: "#999999"))
+                    newCategoryName = ""
+                    newCategoryColorHex = "#999999"
+                    showAddSheet = true
                 } label: { Label("Add", systemImage: "plus") }
             }
         }
+        .sheet(isPresented: $showAddSheet) {
+            NavigationStack {
+                Form {
+                    Section(header: Text("New Category")) {
+                        TextField("Name", text: $newCategoryName)
+                        TextField("Color Hex (optional)", text: $newCategoryColorHex)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                    }
+                }
+                .navigationTitle("Add Category")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { showAddSheet = false } }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Save") { addCategory() }
+                            .disabled(newCategoryName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
+            }
+            .presentationDetents([.medium])
+        }
+    }
+
+    private func addCategory() {
+        let name = newCategoryName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        let hex = newCategoryColorHex.trimmingCharacters(in: .whitespacesAndNewlines)
+        let colorHex = hex.isEmpty ? "#999999" : hex
+        context.insert(Category(name: name, colorHex: colorHex))
+        try? context.save()
+        showAddSheet = false
+    }
+
+    private func deleteCategories(at offsets: IndexSet) {
+        for index in offsets {
+            let cat = categories[index]
+            context.delete(cat)
+        }
+        try? context.save()
     }
 }
 
