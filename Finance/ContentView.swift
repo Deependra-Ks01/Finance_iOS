@@ -112,17 +112,239 @@ struct TransactionsListView: View {
         return "\(type): \(amountString(tx)) on \(DateFormatter.localizedString(from: tx.date, dateStyle: .medium, timeStyle: .none))\nCategory: \(tx.category?.name ?? "Uncategorized")\nNote: \(tx.note)"
     }
 }
+struct BudgetRow: View {
+    let category: Category
+    let budget: Budget?
+    let spent: Decimal
+    let onEdit: () -> Void
+    
+    private var total: Decimal {
+        budget?.amount ?? 0
+    }
+    
+    private var remaining: Decimal {
+        total - spent
+    }
+    
+    // Calculates the progress bar (0.0 to 1.0)
+    private var progress: Double {
+        if total == 0 { return 0 }
+        // Convert Decimal to Double for progress calculation
+        let spentDouble = NSDecimalNumber(decimal: spent).doubleValue
+        let totalDouble = NSDecimalNumber(decimal: total).doubleValue
+        
+        let raw = totalDouble > 0 ? spentDouble / totalDouble : 0
+        return min(max(raw, 0), 1)
+    }
+    
+    // Logic for the text label (Remaining vs Over)
+    private var remainingLabel: String? {
+        guard total > 0 else { return nil }
+        
+        if remaining >= 0 {
+            return "Remaining: \(currencyString(remaining))"
+        } else {
+            return "Over: \(currencyString(-remaining))"
+        }
+    }
+    
+    private var statusColor: Color {
+        remaining >= 0 ? .secondary : .red
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Header: Icon, Name, Total Budget
+            HStack {
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(category.color)
+                        .frame(width: 12, height: 12)
+                    Text(category.name).font(.headline)
+                }
+                Spacer()
+                if total != 0 {
+                    Text(currencyString(total))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("No Budget")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            
+            // Progress Bar
+            ProgressView(value: progress)
+                .tint(progress >= 1 ? .red : .blue)
+            
+            // Footer: Spent and Remaining
+            HStack {
+                Text("Spent: \(currencyString(spent))")
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if let label = remainingLabel {
+                    Text(label)
+                        .foregroundStyle(statusColor)
+                }
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onEdit()
+        }
+    }
+    
+    // Helper function for currency formatting inside the Row
+    private func currencyString(_ value: Decimal) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.currencyCode = Locale.current.currency?.identifier
+        return formatter.string(from: value as NSDecimalNumber) ?? "\(value)"
+    }
+}
 
 struct BudgetsView: View {
+    @Environment(\.modelContext) private var context
     @Query private var budgets: [Budget]
+    @Query private var categories: [Category]
+    @Query(sort: \Transaction.date, order: .reverse) private var transactions: [Transaction]
+
+    @State private var showEditor = false
+    @State private var selectedCategory: Category? = nil
+    @State private var amountString: String = ""
+
     var body: some View {
-        List(budgets) { budget in
-            VStack(alignment: .leading) {
-                Text(budget.name).font(.headline)
-                Text("Amount: \((budget.amount) as NSDecimalNumber)")
+        List {
+            ForEach(categories) { category in
+                // 1. Calculate the data needed for the row
+                let budget = budgets.first { $0.name == category.name }
+                let spent = spentThisMonth(for: category)
+                
+                // 2. Pass data to the Subview
+                BudgetRow(
+                    category: category,
+                    budget: budget,
+                    spent: spent,
+                    onEdit: { presentEditor(for: category, existing: budget) }
+                )
+                // 3. Apply Swipe Actions here
+                .swipeActions {
+                    Button {
+                        presentEditor(for: category, existing: budget)
+                    } label: {
+                        Label("Set", systemImage: "pencil")
+                    }
+                    .tint(.blue)
+                    
+                    if let budget {
+                        Button(role: .destructive) {
+                            context.delete(budget)
+                            try? context.save()
+                        } label: {
+                            Label("Remove", systemImage: "trash")
+                        }
+                    }
+                }
             }
         }
         .navigationTitle("Budgets")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    ForEach(categories) { cat in
+                        Button {
+                            presentEditor(for: cat, existing: budgets.first { $0.name == cat.name })
+                        } label: {
+                            Label(cat.name, systemImage: "folder")
+                        }
+                    }
+                } label: {
+                    Label("Set Budget", systemImage: "plus")
+                }
+            }
+        }
+        .sheet(isPresented: $showEditor) {
+            NavigationStack {
+                Form {
+                    Picker("Category", selection: $selectedCategory) {
+                        ForEach(categories) { cat in
+                            Text(cat.name).tag(Optional(cat))
+                        }
+                    }
+                    TextField("Amount", text: $amountString)
+                        .keyboardType(.decimalPad)
+                    Text("Applies to the current month.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                .navigationTitle("Set Budget")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { showEditor = false } }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Save") { saveBudget() }
+                            .disabled(Decimal(string: amountString) == nil || selectedCategory == nil)
+                    }
+                }
+            }
+            .presentationDetents([.medium])
+        }
+    }
+
+    private func currentMonthPeriod() -> (start: Date, end: Date) {
+        let cal = Calendar.current
+        let now = Date()
+        let comps = cal.dateComponents([.year, .month], from: now)
+        let start = cal.date(from: comps) ?? now
+        let end = cal.date(byAdding: DateComponents(month: 1), to: start) ?? now
+        return (start, end)
+    }
+
+    private func presentEditor(for category: Category, existing: Budget?) {
+        selectedCategory = category
+        if let existing {
+            amountString = "\(existing.amount)"
+        } else {
+            amountString = ""
+        }
+        showEditor = true
+    }
+
+    private func saveBudget() {
+        guard let category = selectedCategory, let amount = Decimal(string: amountString) else { return }
+        
+        if let existing = budgets.first(where: { $0.name == category.name }) {
+            existing.amount = amount
+        } else {
+            let period = currentMonthPeriod()
+            let new = Budget(name: category.name, amount: amount, periodStart: period.start, periodEnd: period.end)
+            context.insert(new)
+        }
+        try? context.save()
+        showEditor = false
+    }
+
+    private func spentThisMonth(for category: Category) -> Decimal {
+        let cal = Calendar.current
+        let now = Date()
+        let comps = cal.dateComponents([.year, .month], from: now)
+        let start = cal.date(from: comps) ?? now
+        let end = cal.date(byAdding: DateComponents(month: 1), to: start) ?? now
+        
+        var total: Decimal = 0
+        
+        // Note: Ideally, you should filter this using a predicate in the Query for better performance
+        // But this logic works for smaller datasets.
+        for tx in transactions {
+            if tx.type != .expense { continue }
+            // Using safe optional comparison for category logic
+            if tx.category?.name != category.name { continue }
+            if tx.date < start || tx.date >= end { continue }
+            
+            let amt = tx.amount < 0 ? -tx.amount : tx.amount
+            total += amt
+        }
+        return total
     }
 }
 
@@ -260,9 +482,10 @@ struct AnalyticsView: View {
                     )
                     .foregroundStyle(slice.color)
                     .annotation(position: .overlay) {
-                        // Show labels for sufficiently large slices
-                        if totalValue > 0 {
-                            let percent = (slice.value as NSDecimalNumber).doubleValue / (totalValue as NSDecimalNumber).doubleValue
+                        let sliceDouble = (slice.value as NSDecimalNumber).doubleValue
+                        let totalDouble = (totalValue as NSDecimalNumber).doubleValue
+                        if totalDouble > 0 {
+                            let percent = sliceDouble / totalDouble
                             if percent > 0.08 {
                                 VStack(spacing: 2) {
                                     Text(slice.name).font(.caption).bold()
@@ -381,3 +604,4 @@ struct AddTransactionView: View {
     ContentView()
         .modelContainer(for: [Transaction.self, Category.self, Tag.self, Budget.self])
 }
+
