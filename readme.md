@@ -2,6 +2,11 @@
 
 A lightweight, privacy‑focused personal finance tracker built with SwiftUI and SwiftData. Record transactions, organize them by category, set monthly budgets, and visualize spending with clear analytics.
 
+![Swift](https://img.shields.io/badge/Swift-F05138?style=flat&logo=swift&logoColor=white)
+![SwiftUI](https://img.shields.io/badge/SwiftUI-007ACC?style=flat&logo=swift&logoColor=white)
+![SwiftData](https://img.shields.io/badge/SwiftData-orange?style=flat&logo=swift&logoColor=white)
+![iOS 17+](https://img.shields.io/badge/iOS-17.0+-black?style=flat&logo=apple)
+
 ## Features
 
 - Quick entry for income and expenses with amount, date, category, and notes
