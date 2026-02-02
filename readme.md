@@ -15,7 +15,7 @@ A lightweight, privacy‑focused personal finance tracker built with SwiftUI and
 ## Screens
 
 <p align="center">
-  <img src="assets/Finance.png" width="900" alt="Finance Manager App Screens" />
+  <img src="Assets/screens.png" width="900" alt="Finance App Screens" />
 </p>
 
 - Home: Welcome and quick “Add Transaction” access
