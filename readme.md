@@ -14,6 +14,10 @@ A lightweight, privacy‑focused personal finance tracker built with SwiftUI and
 
 ## Screens
 
+<p align="center">
+  <img src="assets/Finance.png" width="900" alt="Finance Manager App Screens" />
+</p>
+
 - Home: Welcome and quick “Add Transaction” access
 - Transactions: Chronological list with category, note, date, and amount
 - Budgets: Set per‑category monthly budgets and see progress and remaining/over amounts
