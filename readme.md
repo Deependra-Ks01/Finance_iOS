@@ -61,7 +61,6 @@ All data is stored locally on device using SwiftData. No accounts, no servers, n
 - Multi‑currency support and currency settings
 - Tags and advanced search
 - Recurring transactions
-- Export/import data (CSV)
 
 ## Contributing
 
