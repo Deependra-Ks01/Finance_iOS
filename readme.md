@@ -1,4 +1,4 @@
-# Finance Manager
+# Finance iOS
 
 A lightweight, privacy‑focused personal finance tracker built with SwiftUI and SwiftData. Record transactions, organize them by category, set monthly budgets, and visualize spending with clear analytics.
 
